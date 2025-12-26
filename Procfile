@@ -1,1 +1,2 @@
-web: proxy-server
+web: ./out
+
