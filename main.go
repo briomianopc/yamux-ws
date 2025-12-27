@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	pb "proxy-server/proto"
 
@@ -264,7 +265,7 @@ func handleYamux(conn *websocket.Conn) {
 	// Create yamux server session
 	cfg := yamux.DefaultConfig()
 	cfg.EnableKeepAlive = true
-	cfg.KeepAliveInterval = 30
+	cfg.KeepAliveInterval = 30 * time.Second
 
 	session, err := yamux.Server(ws, cfg)
 	if err != nil {
