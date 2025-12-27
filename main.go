@@ -37,12 +37,22 @@ func main() {
 	// 启动 gRPC 服务
 	go startGRPCServer()
 
-	// 启动 WebSocket 服务
-	http.HandleFunc("/", handler)
+	// 创建自定义 mux 确保所有路径都被处理
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", healthHandler)
+	mux.HandleFunc("/healthz", healthHandler)
+	mux.HandleFunc("/", handler)
+
+	// 创建 server 并设置超时
+	server := &http.Server{
+		Addr:    ":" + port,
+		Handler: mux,
+	}
+
 	log.Printf("🚀 WebSocket server listening on :%s", port)
 	log.Printf("🚀 gRPC server listening on :%s", grpcPort)
 	log.Printf("🔑 UUID: %s", uuid)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Fatal(server.ListenAndServe())
 }
 
 // ======================== gRPC 服务 ========================
@@ -174,7 +184,15 @@ func startGRPCServer() {
 	}
 }
 
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
+}
+
 func handler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("📥 Request: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
+
 	// Check auth via header or path
 	proto := r.Header.Get("Sec-WebSocket-Protocol")
 	authorized := proto == uuid || strings.Contains(r.URL.Path, uuid)
@@ -182,6 +200,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	if !authorized || !websocket.IsWebSocketUpgrade(r) {
 		w.Header().Set("Server", "nginx/1.18.0")
 		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(nginxHTML))
 		return
 	}
