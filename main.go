@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"io"
 	"log"
 	"net"
@@ -19,7 +20,7 @@ import (
 var (
 	uuid     = getEnv("UUID", "d342d11e-d424-4583-b36e-524ab1f0afa4")
 	port     = getEnv("PORT", "8080")
-	grpcPort = getEnv("GRPC_PORT", "50051")
+	grpcMode = false
 	upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 )
 
@@ -34,25 +35,37 @@ func getEnv(key, def string) string {
 const nginxHTML = `<!DOCTYPE html><html><head><title>Welcome to nginx!</title></head><body><h1>Welcome to nginx!</h1><p>If you see this page, the nginx web server is successfully installed and working.</p></body></html>`
 
 func main() {
-	// 启动 gRPC 服务
-	go startGRPCServer()
+	// 解析命令行参数
+	flag.BoolVar(&grpcMode, "grpc", false, "启用 gRPC 模式（默认 WebSocket 模式）")
+	flag.StringVar(&port, "port", port, "监听端口")
+	flag.Parse()
 
-	// 创建自定义 mux 确保所有路径都被处理
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", healthHandler)
-	mux.HandleFunc("/healthz", healthHandler)
-	mux.HandleFunc("/", handler)
-
-	// 创建 server 并设置超时
-	server := &http.Server{
-		Addr:    ":" + port,
-		Handler: mux,
+	// 也支持环境变量 MODE=grpc
+	if os.Getenv("MODE") == "grpc" {
+		grpcMode = true
 	}
 
-	log.Printf("🚀 WebSocket server listening on :%s", port)
-	log.Printf("🚀 gRPC server listening on :%s", grpcPort)
 	log.Printf("🔑 UUID: %s", uuid)
-	log.Fatal(server.ListenAndServe())
+
+	if grpcMode {
+		// gRPC 模式
+		log.Printf("🚀 gRPC server listening on :%s", port)
+		startGRPCServer()
+	} else {
+		// WebSocket 模式（默认）
+		mux := http.NewServeMux()
+		mux.HandleFunc("/health", healthHandler)
+		mux.HandleFunc("/healthz", healthHandler)
+		mux.HandleFunc("/", handler)
+
+		server := &http.Server{
+			Addr:    ":" + port,
+			Handler: mux,
+		}
+
+		log.Printf("🚀 WebSocket server listening on :%s", port)
+		log.Fatal(server.ListenAndServe())
+	}
 }
 
 // ======================== gRPC 服务 ========================
@@ -170,7 +183,7 @@ func parseGRPCConnect(data []byte) (target string, extraData []byte) {
 }
 
 func startGRPCServer() {
-	lis, err := net.Listen("tcp", ":"+grpcPort)
+	lis, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		log.Fatalf("❌ gRPC listen failed: %v", err)
 	}
@@ -178,7 +191,6 @@ func startGRPCServer() {
 	s := grpc.NewServer()
 	pb.RegisterProxyServiceServer(s, &proxyServer{})
 
-	log.Printf("🚀 gRPC server started on :%s", grpcPort)
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("❌ gRPC serve failed: %v", err)
 	}
